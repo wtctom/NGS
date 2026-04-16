@@ -1,1 +1,30 @@
-
+awk 'BEGIN {FS=OFS="\t"}
+     NR==1 {
+         for(i=1;i<=NF;i++) {
+             if($i=="cloneId") cid=i;
+             if($i=="readCount") rc=i;
+             if($i=="aaSeqCDR1") cdr1=i;
+             if($i=="aaSeqFR2") fr2=i;
+             if($i=="aaSeqCDR2") cdr2=i;
+             if($i=="aaSeqFR3") fr3=i;
+             if($i=="aaSeqCDR3") cdr3=i;
+         }
+         print "cloneId", "readCount", "aaSeqFull";
+         next;
+     }
+     {
+         key = $cdr1 $fr2 $cdr2 $fr3 $cdr3;
+         if (!(key in first_clone)) {
+             first_clone[key] = $cid;
+             sum_rc[key] = $rc;
+             order[++n] = key;
+         } else {
+             sum_rc[key] += $rc;
+         }
+     }
+     END {
+         for(i=1;i<=n;i++) {
+             key = order[i];
+             print first_clone[key], sum_rc[key], key;
+         }
+     }' S7_R1_OP_FULL_IGH.tsv > S7_R1_OP_merged_unique.tsv
