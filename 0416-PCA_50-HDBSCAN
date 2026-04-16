@@ -1,0 +1,233 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import os
+# 🔒 完全隔离 cache（不会影响别人）
+os.environ["TORCH_HOME"] = "/home/home/xiaol/ngs_analysis_wtc/cache/torch"
+os.environ["XDG_CACHE_HOME"] = "/home/home/xiaol/ngs_analysis_wtc/cache
+
+import esm
+import torch
+from Bio import SeqIO
+import numpy as np
+import pandas as pd
+from sklearn.decomposition import PCA
+import hdbscan
+import matplotlib.pyplot as plt
+import seaborn as sns
+import os
+
+#-----------------------------
+#1️⃣ 参数设置
+#-----------------------------
+
+fasta_file = "/home/home/xiaol/ngs_analysis_wtc/NGS/results/S7_R1_OP_merged_unique.fasta"
+
+# ⚠️ 3B模型必须小batch
+batch_size = 4
+
+use_gpu = torch.cuda.is_available()
+device = torch.device("cuda" if use_gpu else "cpu")
+
+output_dir = "/home/home/xiaol/ngs_analysis_wtc/NGS/S7_R1_OP_ESM2_3B"
+
+os.makedirs(output_dir, exist_ok=True)
+
+embedding_dir = os.path.join(output_dir, "embedding_batches")
+embedding_file = os.path.join(output_dir, "all_embeddings.pt")
+
+output_csv = os.path.join(output_dir, "ngs_sequences_clusters.csv")
+output_fig = os.path.join(output_dir, "pca_clusters.png")
+
+os.makedirs(embedding_dir, exist_ok=True)
+
+#-----------------------------
+#2️⃣ 读取序列
+#-----------------------------
+
+sequences = []
+labels = []
+
+for record in SeqIO.parse(fasta_file, "fasta"):
+
+    seq = str(record.seq).rstrip("_")
+
+    sequences.append((record.id, seq))
+    labels.append(record.id)
+
+print(f"读取 {len(sequences)} 条序列")
+
+#-----------------------------
+#3️⃣ 加载 ESM2 3B
+#-----------------------------
+
+print("加载 ESM2 3B 模型...")
+
+model, alphabet = esm.pretrained.esm2_t36_3B_UR50D()
+
+model = model.to(device)
+
+model.eval()
+
+batch_converter = alphabet.get_batch_converter()
+
+#-----------------------------
+#4️⃣ 生成 embedding（Mixed Precision）
+#-----------------------------
+
+if os.path.exists(embedding_file):
+
+    print("检测到已有 embedding，直接加载")
+
+    saved = torch.load(embedding_file)
+
+    embeddings = saved["embeddings"].numpy()
+
+else:
+
+    print("开始计算 embeddings...")
+
+    all_embeddings = []
+
+    total_batches = (len(sequences)-1)//batch_size + 1
+
+    for i in range(0, len(sequences), batch_size):
+
+        batch = sequences[i:i+batch_size]
+
+        batch_labels, batch_strs, batch_tokens = batch_converter(batch)
+
+        batch_tokens = batch_tokens.to(device)
+
+        with torch.no_grad():
+
+            # ⭐ Mixed Precision 开始
+            with torch.cuda.amp.autocast():
+
+                results = model(
+                    batch_tokens,
+                    repr_layers=[model.num_layers],
+                    return_contacts=False
+                )
+
+        token_embeddings = results["representations"][model.num_layers]
+
+        # mean pooling
+        sequence_embeddings = token_embeddings.mean(1)
+
+        sequence_embeddings_cpu = sequence_embeddings.cpu()
+
+        # 保存每批
+        np.save(
+            os.path.join(
+                embedding_dir,
+                f"batch_{i//batch_size}.npy"
+            ),
+            sequence_embeddings_cpu.numpy()
+        )
+
+        all_embeddings.append(sequence_embeddings_cpu)
+
+        print(
+            f"处理 batch {i//batch_size + 1}/{total_batches}"
+        )
+
+    embeddings = torch.cat(all_embeddings, dim=0)
+
+    torch.save(
+        {
+            "labels": labels,
+            "embeddings": embeddings
+        },
+        embedding_file
+    )
+
+    embeddings = embeddings.numpy()
+
+print(f"embedding 完成: {embeddings.shape}")
+
+#-----------------------------
+#5️⃣ PCA降维（50维）
+#-----------------------------
+
+print("开始 PCA 降维...")
+
+pca = PCA(n_components=50)
+
+embeddings_pca = pca.fit_transform(embeddings)
+
+print(f"PCA完成: {embeddings_pca.shape}")
+
+#-----------------------------
+#6️⃣ HDBSCAN 聚类
+#-----------------------------
+
+print("开始 HDBSCAN 聚类...")
+
+clusterer = hdbscan.HDBSCAN(
+
+    min_cluster_size=10,
+    min_samples=5,
+    metric="euclidean"
+
+)
+
+labels_cluster = clusterer.fit_predict(
+    embeddings_pca
+)
+
+n_clusters = len(
+    set(labels_cluster)
+) - (1 if -1 in labels_cluster else 0)
+
+noise_ratio = np.sum(labels_cluster == -1) / len(labels_cluster)
+
+print(f"聚类完成:")
+print(f"Cluster 数量: {n_clusters}")
+print(f"Noise 比例: {noise_ratio:.2%}")
+
+#-----------------------------
+#7️⃣ 保存 cluster 结果
+#-----------------------------
+
+df = pd.DataFrame({
+
+    "sequence_id": labels,
+    "cluster": labels_cluster
+
+})
+
+df.to_csv(output_csv, index=False)
+
+print(f"结果保存: {output_csv}")
+
+#-----------------------------
+#8️⃣ PCA 2D 可视化
+#-----------------------------
+
+print("生成 PCA 2D 可视化...")
+
+pca_2d = PCA(n_components=2)
+
+embeddings_2d = pca_2d.fit_transform(
+    embeddings_pca
+)
+
+plt.figure(figsize=(8,6))
+
+sns.scatterplot(
+
+    x=embeddings_2d[:,0],
+    y=embeddings_2d[:,1],
+    hue=labels_cluster,
+    palette="tab20",
+    legend=False,
+    s=8
+
+)
+
+plt.title("ESM2-3B PCA-HDBSCAN")
+
+plt.savefig(output_fig, dpi=300)
+
+print(f"图保存: {output_fig}")
