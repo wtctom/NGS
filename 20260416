@@ -1,3 +1,7 @@
+#自动识别列位置（cloneId, readCount, aaSeqCDR1, aaSeqFR2, aaSeqCDR2, aaSeqFR3, aaSeqCDR3）。
+#拼接这五个字段（直接连接）作为完整氨基酸序列 aaSeqFull。
+#按 aaSeqFull 分组，保留第一次出现的 cloneId，累加 readCount。
+#输出三列：cloneId（原ID）、readCount（累加后）、aaSeqFull。
 awk 'BEGIN {FS=OFS="\t"}
      NR==1 {
          for(i=1;i<=NF;i++) {
@@ -28,3 +32,5 @@ awk 'BEGIN {FS=OFS="\t"}
              print first_clone[key], sum_rc[key], key;
          }
      }' S7_R1_OP_FULL_IGH.tsv > S7_R1_OP_merged_unique.tsv
+#转为FASTA格式
+awk 'BEGIN {FS=OFS="\t"} NR>1 {print ">" $1 "|readCount=" $2; print $3}' S7_R1_OP_merged_unique.tsv > S7_R1_OP_merged_unique.fasta
