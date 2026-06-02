@@ -1,0 +1,29 @@
+(esmc_600m_wtc) xiaol@zy-afsrv:~/.cache/huggingface_esmc/hub$ python -c "
+import torch
+from esm.models.esmc import ESMC
+from esm.tokenization.sequence_tokenizer import EsmSequenceTokenizer
+
+# 1. 初始化（完全匹配权重）
+tokenizer = EsmSequenceTokenizer()
+model = ESMC(
+    tokenizer=tokenizer,
+    d_model=1152,
+    n_heads=18,
+    n_layers=36
+)
+
+# 2. 加载本地权重（路径完全正确）
+ckpt_path = '/home/xiaol/.cache/huggingface_esmc/models--EvolutionaryScale--esmc-600m-2024-12/blobs/8ef856e1a237ee3f995442df997a962e70057faadecf38fc0c8561bd3c2f4324'
+state_dict = torch.load(ckpt_path, map_location='cpu', weights_only=True)
+model.load_state_dict(state_dict)
+model.to('cuda').eval()
+
+print('✅ ESMC 600M 加载成功！')
+
+# 3. 正确推理（只取 input_ids 张量！）
+seq = 'MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLTLKFICTTGKLPVPWPTLVTT'
+inputs = tokenizer([seq], return_tensors='pt').to('cuda')
+
+"rint('嵌入形状:', outputs.embeddings.shape)
+✅ ESMC 600M 加载成功！
+嵌入形状: torch.Size([1, 65, 1152])
