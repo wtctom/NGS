@@ -1,0 +1,190 @@
+import torch
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
+from esm.models.esmc import ESMC
+from esm.tokenization.sequence_tokenizer import EsmSequenceTokenizer
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+import hdbscan
+import os
+import matplotlib.pyplot as plt
+from sklearn.manifold import TSNE
+from collections import defaultdict
+from umap import UMAP
+
+# ------------------------------------------------------------------------------
+# 1. 固定 ESMC-600M 模型配置（永久不变）
+# ------------------------------------------------------------------------------
+print("🔄 加载 ESMC-600M 模型...")
+tokenizer = EsmSequenceTokenizer()
+model = ESMC(
+    tokenizer=tokenizer,
+    d_model=1152,    # 固定
+    n_heads=18,      # 固定
+    n_layers=36      # 固定
+)
+
+# 你本地的模型权重路径
+ckpt_path = "/home/xiaol/.cache/huggingface_esmc/models--EvolutionaryScale--esmc-600m-2024-12/blobs/8ef856e1a237ee3f995442df997a962e70057faadecf38fc0c8561bd3c2f4324"
+
+state_dict = torch.load(ckpt_path, map_location="cuda", weights_only=True)
+model.load_state_dict(state_dict)
+model.eval()
+model.to("cuda")
+print("✅ 模型加载完成！")
+
+# ------------------------------------------------------------------------------
+# 2. 读取 FASTA 文件
+# ------------------------------------------------------------------------------
+FASTA_FILE = "/home/xiaol/wtc/old-result/results/S7_R1_OP_merged_unique.fasta"
+
+def read_fasta(fasta_path):
+    headers = []
+    seqs = []
+    with open(fasta_path, "r") as f:
+        header = ""
+        seq = ""
+        for line in f:
+            line = line.strip()
+            if line.startswith(">"):
+                if header:
+                    headers.append(header)
+                    seqs.append(seq)
+                header = line[1:]
+                seq = ""
+            else:
+                seq += line
+        if header:
+            headers.append(header)
+            seqs.append(seq)
+    return headers, seqs
+
+headers, sequences = read_fasta(FASTA_FILE)
+print(f"📄 读取到 {len(sequences)} 条序列")
+
+# ------------------------------------------------------------------------------
+# 3. 分批提取 embedding
+# ------------------------------------------------------------------------------
+BATCH_SIZE = 16
+embeddings = []
+
+with torch.no_grad():
+    for i in tqdm(range(0, len(sequences), BATCH_SIZE), desc="提取Embedding"):
+        batch_seqs = sequences[i:i+BATCH_SIZE]
+        inputs = tokenizer(
+            batch_seqs,
+            return_tensors="pt",
+            padding=True,
+            truncation=True
+        ).to("cuda")
+        
+        outputs = model(inputs["input_ids"])
+        batch_emb = outputs.embeddings.mean(dim=1).cpu().numpy()
+        embeddings.append(batch_emb)
+
+embeddings = np.concatenate(embeddings, axis=0)
+print(f"✅ Embedding 生成完成：{embeddings.shape}")
+
+# ------------------------------------------------------------------------------
+# 4. PCA50 + UMAP10【最强聚合参数】
+# ------------------------------------------------------------------------------
+print("🔄 PCA 降维到 50 维...")
+scaler = StandardScaler()
+emb_scaled = scaler.fit_transform(embeddings)
+
+pca = PCA(n_components=50, random_state=42)
+emb_pca50 = pca.fit_transform(emb_scaled)
+
+# UMAP最强收敛配置：邻域超大+点极度聚拢
+print("🔄 UMAP 降维到 10 维【强聚合降噪】...")
+umap = UMAP(
+    n_components=10,
+    n_neighbors=35,    # 越大：远距离相似样本合并，簇大幅变少
+    min_dist=0.05,    # 极小值：样本紧密挤压，孤立点被吸附进簇
+    random_state=42
+)
+emb_final = umap.fit_transform(emb_pca50)
+print(f"✅ 降维完成：{emb_final.shape}")
+
+# ------------------------------------------------------------------------------
+# 5. HDBSCAN【最少簇+最低噪声】配置
+# ------------------------------------------------------------------------------
+print("🔄 HDBSCAN 聚类【强聚合模式】...")
+clusterer = hdbscan.HDBSCAN(
+    min_cluster_size=12,
+    min_samples=4,
+    metric="euclidean",
+    cluster_selection_method="eom"  # EOM算法更倾向合并小簇，进一步减少簇数量
+)
+cluster_labels = clusterer.fit_predict(emb_final)
+
+n_clusters = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
+n_noise = list(cluster_labels).count(-1)
+print(f"✅ 聚类完成：找到 {n_clusters} 个聚类，{n_noise} 个噪声点")
+
+# ------------------------------------------------------------------------------
+# 6. t-SNE 二维可视化
+# ------------------------------------------------------------------------------
+print("🔄 t-SNE 降维到 2D...")
+tsne = TSNE(n_components=2, random_state=42, perplexity=30, max_iter=1000)
+emb_2d = tsne.fit_transform(emb_final)
+
+# ------------------------------------------------------------------------------
+# 7. 画图
+# ------------------------------------------------------------------------------
+plt.figure(figsize=(10, 8))
+plt.scatter(emb_2d[:,0], emb_2d[:,1], c=cluster_labels, cmap="tab20", s=50, alpha=0.8)
+plt.colorbar(label="Cluster")
+plt.title("ESMC-600M | PCA50+UMAP10(Strong)+HDBSCAN(Min Cluster Mode)")
+plt.tight_layout()
+
+# ------------------------------------------------------------------------------
+# 8. 结果保存
+# ------------------------------------------------------------------------------
+save_dir = "/home/xiaol/wtc/test/20260605"
+os.makedirs(save_dir, exist_ok=True)
+
+csv_path = os.path.join(save_dir, "ESMC600M_StrongCluster_result.csv")
+npy_path = os.path.join(save_dir, "ESMC600M_embedding_UMAP10_Strong.npy")
+img_path = os.path.join(save_dir, "tsne_StrongCluster.png")
+
+df = pd.DataFrame({
+    "seq_id": headers,
+    "sequence": sequences,
+    "cluster": cluster_labels
+})
+
+df.to_csv(csv_path, index=False)
+np.save(npy_path, emb_final)
+plt.savefig(img_path, dpi=300)
+plt.close()
+
+# ------------------------------------------------------------------------------
+# 生成簇中心序列
+# ------------------------------------------------------------------------------
+def get_centroids(embeddings, cluster_labels, headers, sequences):
+    cluster_info = defaultdict(list)
+    for e, l, h, s in zip(embeddings, cluster_labels, headers, sequences):
+        if l == -1: continue
+        cluster_info[l].append( (e,h,s) )
+    cents = []
+    for l, items in cluster_info.items():
+        embs = [x[0] for x in items]
+        mean_vec = np.mean(embs, axis=0)
+        dists = [np.linalg.norm(e - mean_vec) for e in embs]
+        best = items[np.argmin(dists)]
+        cents.append( (l, best[1], best[2]) )
+    return cents
+
+centroids = get_centroids(embeddings, cluster_labels, headers, sequences)
+cent_file = os.path.join(save_dir, "StrongCluster_centroids.fasta")
+with open(cent_file, "w") as f:
+    for l, h, s in centroids:
+        f.write(f">Cluster_{l}_centroid|{h}\n{s}\n")
+
+print("🎉 最强聚合聚类全部完成！")
+print(f"📁 聚类表：{csv_path}")
+print(f"📁 UMAP10D向量：{npy_path}")
+print(f"📁 t-SNE图：{img_path}")
+print(f"�� 中心序列：{cent_file}")
