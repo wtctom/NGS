@@ -1,3 +1,16 @@
+../mixcr/mixcr analyze generic-bcr-amplicon \
+  --species alpaca \
+  --dna \
+  --floating-left-alignment-boundary \
+  --floating-right-alignment-boundary J \
+  --export-productive-clones-only \
+  --assemble-clonotypes-by "VDJRegion" \
+  /home/home/xiaol/ngs_analysis_wtc/NGS/raw/N28-LHL14216_L1_1.fq.gz \
+  /home/home/xiaol/ngs_analysis_wtc/NGS/raw/N28-LHL14216_L1_2.fq.gz \
+  /home/home/xiaol/ngs_analysis_wtc/260608pre/N28/output_full
+
+
+
 #自动识别列位置（cloneId, readCount, aaSeqCDR1, aaSeqFR2, aaSeqCDR2, aaSeqFR3, aaSeqCDR3）。
 #拼接这五个字段（直接连接）作为完整氨基酸序列 aaSeqFull。
 #按 aaSeqFull 分组，保留第一次出现的 cloneId，累加 readCount。
@@ -31,6 +44,6 @@ awk 'BEGIN {FS=OFS="\t"}
              key = order[i];
              print first_clone[key], sum_rc[key], key;
          }
-     }' S7_R1_OP_FULL_IGH.tsv > S7_R1_OP_merged_unique.tsv
+     }' output_full.clones_IGH.tsv > N28_merged_unique.tsv
 #转为FASTA格式
-awk 'BEGIN {FS=OFS="\t"} NR>1 {print ">" $1 "|readCount=" $2; print $3}' S7_R1_OP_merged_unique.tsv > S7_R1_OP_merged_unique.fasta
+awk 'BEGIN {FS=OFS="\t"} NR>1 {print ">" $1 "|readCount=" $2; print $3}' N28_merged_unique.tsv > N28_merged_unique.fasta
