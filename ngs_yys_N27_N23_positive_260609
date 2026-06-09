@@ -1,0 +1,129 @@
+import pandas as pd
+import os
+from Bio import SeqIO
+
+# ====================== 路径 ======================
+neg_path = "/home/xiaol/wtc/260608/N23/ESMC600M_StrongCluster_result.csv"
+pos_path = "/home/xiaol/wtc/260608/N27/ESMC600M_StrongCluster_result.csv"
+pos_cdr3_fasta = "/home/xiaol/wtc/260608/positive.fst"
+out_dir  = "/home/xiaol/wtc/260608/KNN"
+os.makedirs(out_dir, exist_ok=True)
+
+# ====================== 函数 ======================
+def get_after_yyc(seq):
+    s = str(seq).upper()
+    idx = s.find("YYC")
+    return s[idx+3:] if idx != -1 else None
+
+# ====================== 1. 读取阴性 ======================
+df_neg = pd.read_csv(neg_path)
+df_neg["after_YYC"] = df_neg["sequence"].apply(get_after_yyc)
+df_neg = df_neg.dropna(subset=["after_YYC"])
+neg_set = set(df_neg["after_YYC"].unique())
+
+# ====================== 2. 读取阳性 ======================
+df_pos = pd.read_csv(pos_path)
+df_pos["after_YYC"] = df_pos["sequence"].apply(get_after_yyc)
+df_pos = df_pos.dropna(subset=["after_YYC"]).copy()
+
+# ====================== 3. 簇级别阴性剔除 ======================
+df_pos["match_neg"] = df_pos["after_YYC"].isin(neg_set)
+bad_clusters = df_pos.loc[df_pos["match_neg"] == True, "cluster"].unique()
+df_pos["is_negative_background"] = df_pos["cluster"].isin(bad_clusters)
+
+# ====================== 4. 新增：匹配你提供的阳性CDR3 ======================
+# 读取FASTA里的目标CDR3序列
+target_cdr3_set = set()
+for rec in SeqIO.parse(pos_cdr3_fasta, "fasta"):
+    seq = str(rec.seq).upper().strip()
+    if seq:
+        target_cdr3_set.add(seq)
+
+print(f"✅ 你提供的目标阳性CDR3数量：{len(target_cdr3_set)}")
+
+# 匹配：只要 after_YYC 中包含 或 等于 目标CDR3 → True
+def match_target_cdr3(after_yyc_seq):
+    if pd.isna(after_yyc_seq):
+        return False
+    for cdr3 in target_cdr3_set:
+        if cdr3 in after_yyc_seq:
+            return True
+    return False
+
+df_pos["match_target_positive_cdr3"] = df_pos["after_YYC"].apply(match_target_cdr3)
+
+# ====================== 统计 ======================
+total = len(df_pos)
+bad = df_pos["is_negative_background"].sum()
+good = total - bad
+target_hit = df_pos["match_target_positive_cdr3"].sum()
+
+print("\n" + "="*70)
+print("  最终结果：阴性簇剔除 + 目标阳性CDR3标记 ".center(70))
+print("="*70)
+print(f"有效序列：{total:>6} 条")
+print(f"阴性污染簇剔除：{bad:>6} 条 ({bad/total:.1%})")
+print(f"匹配目标阳性CDR3：{target_hit:>6} 条")
+print(f"干净非污染序列：{good:>6} 条")
+print("="*70)
+
+# ====================== 保存 ======================
+out_file = os.path.join(out_dir, "N27_N23_FINAL_FULL_TAG.csv")
+df_pos.to_csv(out_file, index=False, encoding="utf-8")
+
+print(f"\n✅ 最终文件已保存：\n{out_file}")
+
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.manifold import TSNE
+from matplotlib.lines import Line2D
+import os
+
+# 路径
+pos_umap10_path = "/home/xiaol/wtc/260608/N27/ESMC600M_embedding_UMAP10_Strong.npy"
+tsne_save_path = "/home/xiaol/wtc/260608/KNN/N27_N23_tsne_2d_fixed.npy"
+
+# 加载数据
+emb_pos = np.load(pos_umap10_path)
+valid_idx = df_pos.index
+X = emb_pos[valid_idx]
+
+# 只计算一次t-SNE并保存
+if not os.path.exists(tsne_save_path):
+    print("🔹 第一次运行：计算t-SNE...")
+    tsne = TSNE(n_components=2, random_state=42, perplexity=50, max_iter=2000)
+    emb_2d = tsne.fit_transform(X)
+    np.save(tsne_save_path, emb_2d)
+else:
+    print("✅ 加载已保存的t-SNE坐标")
+    emb_2d = np.load(tsne_save_path)
+
+# 颜色规则
+colors = []
+for i in range(len(df_pos)):
+    is_neg = str(df_pos["is_negative_background"].iloc[i]).strip().lower() == "true"
+    is_target = str(df_pos["match_target_positive_cdr3"].iloc[i]).strip().lower() == "true"
+
+    if is_target:
+        colors.append("#e63946")
+    elif is_neg:
+        colors.append("#d0d0d0")
+    else:
+        colors.append("#457b9d")
+
+# 画图
+plt.figure(figsize=(12, 10))
+plt.scatter(emb_2d[:, 0], emb_2d[:, 1], c=colors, s=10, alpha=0.7)
+
+legend_elements = [
+    Line2D([0], [0], marker='o', color='w', markerfacecolor='#d0d0d0', markersize=12, label='Negative background (remove)'),
+    Line2D([0], [0], marker='o', color='w', markerfacecolor='#457b9d', markersize=12, label='Clean positive (non-target)'),
+    Line2D([0], [0], marker='o', color='w', markerfacecolor='#e63946', markersize=12, label='All TARGET CDR3 (1724)'),
+]
+plt.legend(handles=legend_elements, fontsize=12)
+plt.title("Positive Clones: Target CDR3 vs Background (t-SNE on UMAP10)", fontsize=16)
+plt.tight_layout()
+plt.savefig("/home/xiaol/wtc/260608/KNN/N27_N23_TSNE_CLASSIFICATION.png", dpi=300, bbox_inches="tight")
+plt.close()
+
+print("✅ 紧凑版t-SNE图已保存，永久可重复")
