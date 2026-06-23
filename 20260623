@@ -1,0 +1,10 @@
+/home/xiaol/mixcr-4.7.0/mixcr analyze generic-bcr-amplicon \
+  --species alpaca \
+  --dna \
+  --floating-left-alignment-boundary \
+  --floating-right-alignment-boundary J \
+  --export-productive-clones-only \
+  --assemble-clonotypes-by "VDJRegion" \
+  /home/xiaol/wtc/raw/N17-LHL5461_L1_1.fq.gz \
+  /home/xiaol/wtc/raw/N17-LHL5461_L1_2.fq.gz \
+  /home/xiaol/wtc/260622/N17/output_full
