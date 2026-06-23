@@ -5,6 +5,115 @@
   --floating-right-alignment-boundary J \
   --export-productive-clones-only \
   --assemble-clonotypes-by "VDJRegion" \
-  /home/xiaol/wtc/raw/N17-LHL5461_L1_1.fq.gz \
-  /home/xiaol/wtc/raw/N17-LHL5461_L1_2.fq.gz \
-  /home/xiaol/wtc/260622/N17/output_full
+  /home/xiaol/wtc/raw/N22-LHL5466_L1_1.fq.gz \
+  /home/xiaol/wtc/raw/N22-LHL5466_L1_2.fq.gz \
+  /home/xiaol/wtc/260622/N22/output_full
+
+awk -F '\t' '
+BEGIN{
+    OFS="\t"
+    print "first_cloneId","total_reads","cdr1|cdr2|cdr3"
+}
+NR == 1 { next }
+{
+    # A=$1 cloneId, B=$2 readCount
+    # AC=$29 aaSeqCDR1, AE=$31 aaSeqCDR2, AG=$33 aaSeqCDR3
+    cdr1 = $29
+    cdr2 = $31
+    cdr3 = $33
+    key = cdr1 "|" cdr2 "|" cdr3
+
+    sum[key] += $2
+    # 只保存第一条出现的cloneId，不再拼接全部ID
+    if (!first_id[key]){
+        first_id[key] = $1
+    }
+}
+END {
+    for(k in sum) {
+        print first_id[k], sum[k], k
+    }
+}' /home/xiaol/wtc/260622/N22/output_full.clones_IGH.tsv > /home/xiaol/wtc/260622/N22/cdr_aa_unique_merged.tsv
+
+
+out_dir="/home/xiaol/wtc/260622/a"
+# 删除旧脏文件
+rm -f ${out_dir}/tmp_N* ${out_dir}/all_cdr_aa_x_count.txt
+
+# N22 m=-3
+awk -F '\t' 'NR>1{print $3,$2,-3}' /home/xiaol/wtc/260622/N22/cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N22
+# N18 m=-2
+awk -F '\t' 'NR>1{print $3,$2,-2}' /home/xiaol/wtc/260622/N18/cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N18
+# N19 m=-1
+awk -F '\t' 'NR>1{print $3,$2,-1}' /home/xiaol/wtc/260622/N19/cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N19
+# N17 m=1
+awk -F '\t' 'NR>1{print $3,$2,1}' /home/xiaol/wtc/260622/N17/cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N17
+
+cat ${out_dir}/tmp_N22 ${out_dir}/tmp_N18 ${out_dir}/tmp_N19 ${out_dir}/tmp_N17 > ${out_dir}/all_cdr_aa_x_count.txt
+
+cat > ${out_dir}/calc_enrich_slope.py << 'EOF'
+import math
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from collections import defaultdict
+
+in_file = "/home/xiaol/wtc/260622/a/all_cdr_aa_x_count.txt"
+out_file = "/home/xiaol/wtc/260622/a/cdr_slope_result.tsv"
+
+# 1. 按横坐标m分组，统计每个样本总reads
+sample_total = defaultdict(int)
+sample_data = defaultdict(list)
+with open(in_file, "r") as f:
+    for line in f:
+        line = line.strip()
+        if not line:
+            continue
+        cdr_key, raw_cnt, m = line.split()
+        raw_cnt = int(raw_cnt)
+        m = float(m)
+        sample_data[m].append((cdr_key, raw_cnt))
+        sample_total[m] += raw_cnt
+
+# 2. 计算每条CDR的 y = log2(p)，p=序列reads/样本总reads
+cdr_xy = defaultdict(list)
+for m, item_list in sample_data.items():
+    total_s = sample_total[m]
+    clone_num = len(item_list)
+    for cdr, cnt in item_list:
+        # 伪计数避免log2(0)报错
+        p = (cnt + 1) / (total_s + clone_num)
+        y = math.log2(p)
+        cdr_xy[cdr].append((m, y))
+
+# 3. 逐序列一元线性回归
+with open(out_file, "w") as out:
+    # 表头：CDR三联、出现样本数、截距β0、富集斜率β1、拟合优度R²
+    out.write("cdr1|cdr2|cdr3\tsample_count\tbeta0_intercept\tbeta1_slope\tR2\n")
+    for cdr_key, xy_list in cdr_xy.items():
+        # 少于2个样本无法做回归，直接跳过
+        if len(xy_list) < 2:
+            continue
+        xs = np.array([x[0] for x in xy_list]).reshape(-1, 1)
+        ys = np.array([x[1] for x in xy_list])
+        reg = LinearRegression()
+        reg.fit(xs, ys)
+        beta0 = reg.intercept_
+        beta1 = reg.coef_[0]
+        r2 = reg.score(xs, ys)
+        out.write(f"{cdr_key}\t{len(xy_list)}\t{beta0:.4f}\t{beta1:.4f}\t{r2:.4f}\n")
+print("回归计算完成，输出：", out_file)
+print("beta1_slope越大，富集越强（负筛低、阳性样本高）")
+EOF
+
+# 运行脚本
+python3 ${out_dir}/calc_enrich_slope.py
+
+
+
+
+
+
+
+
+
+
