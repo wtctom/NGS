@@ -33,23 +33,19 @@ END {
     for(k in sum) {
         print first_id[k], sum[k], k
     }
-}' /home/xiaol/wtc/260622/N22/output_full.clones_IGH.tsv > /home/xiaol/wtc/260622/N22/cdr_aa_unique_merged.tsv
+}' /home/xiaol/wtc/260608pre/N28/output_full.clones_IGH.tsv > /home/xiaol/wtc/260608pre/N28/cdr_aa_unique_merged.tsv
 
 
-out_dir="/home/xiaol/wtc/260622/a"
-# 删除旧脏文件
-rm -f ${out_dir}/tmp_N* ${out_dir}/all_cdr_aa_x_count.txt
+out_dir="/home/xiaol/wtc/260622/CG024"
 
-# N22 m=-3
-awk -F '\t' 'NR>1{print $3,$2,-3}' /home/xiaol/wtc/260622/N22/cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N22
-# N18 m=-2
-awk -F '\t' 'NR>1{print $3,$2,-2}' /home/xiaol/wtc/260622/N18/cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N18
-# N19 m=-1
-awk -F '\t' 'NR>1{print $3,$2,-1}' /home/xiaol/wtc/260622/N19/cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N19
-# N17 m=1
-awk -F '\t' 'NR>1{print $3,$2,1}' /home/xiaol/wtc/260622/N17/cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N17
+# N24 m=-1
+awk -F '\t' 'NR>1{print $3,$2,-1}' /home/xiaol/wtc/260608pre/N24/cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N24
+# N27 m=1
+awk -F '\t' 'NR>1{print $3,$2,1}' /home/xiaol/wtc/260608pre/N27/cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N27
+# N28 m=2
+awk -F '\t' 'NR>1{print $3,$2,2}' /home/xiaol/wtc/260608pre/N28/cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N28
 
-cat ${out_dir}/tmp_N22 ${out_dir}/tmp_N18 ${out_dir}/tmp_N19 ${out_dir}/tmp_N17 > ${out_dir}/all_cdr_aa_x_count.txt
+cat ${out_dir}/tmp_N24 ${out_dir}/tmp_N27 ${out_dir}/tmp_N28 > ${out_dir}/all_cdr_aa_x_count2.txt
 
 cat > ${out_dir}/calc_enrich_slope.py << 'EOF'
 import math
@@ -57,8 +53,8 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 from collections import defaultdict
 
-in_file = "/home/xiaol/wtc/260622/a/all_cdr_aa_x_count.txt"
-out_file = "/home/xiaol/wtc/260622/a/cdr_slope_result.tsv"
+in_file = "/home/xiaol/wtc/260622/CG024/all_cdr_aa_x_count2.txt"
+out_file = "/home/xiaol/wtc/260622/CG024/cdr_slope_result2.tsv"
 
 # 1. 按横坐标m分组，统计每个样本总reads
 sample_total = defaultdict(int)
@@ -110,7 +106,87 @@ python3 ${out_dir}/calc_enrich_slope.py
 
 
 
+cat > ${out_dir}/calc_enrich_slope.py << 'EOF'
+import math
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from collections import defaultdict
 
+in_file = "/home/xiaol/wtc/260622/CG024/all_cdr_aa_x_count2.txt"
+out_file = "/home/xiaol/wtc/260622/CG024/cdr_slope_result4.tsv"
+positive_fasta = "/home/xiaol/wtc/260608/positive.fst"
+
+# 读取所有阳性序列存入列表
+positive_seqs = []
+with open(positive_fasta, "r") as f:
+    seq_buf = ""
+    for line in f:
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith(">"):
+            if seq_buf:
+                positive_seqs.append(seq_buf)
+                seq_buf = ""
+        else:
+            seq_buf += line
+    if seq_buf:
+        positive_seqs.append(seq_buf)
+
+# 1. 按横坐标m分组，统计每个样本总reads
+sample_total = defaultdict(int)
+sample_data = defaultdict(list)
+with open(in_file, "r") as f:
+    for line in f:
+        line = line.strip()
+        if not line:
+            continue
+        cdr_key, raw_cnt, m = line.split()
+        raw_cnt = int(raw_cnt)
+        m = float(m)
+        sample_data[m].append((cdr_key, raw_cnt))
+        sample_total[m] += raw_cnt
+
+# 2. 计算每条CDR的 y = log2(p)，p=序列reads/样本总reads
+cdr_xy = defaultdict(list)
+for m, item_list in sample_data.items():
+    total_s = sample_total[m]
+    clone_num = len(item_list)
+    for cdr, cnt in item_list:
+        p = (cnt + 1) / (total_s + clone_num)
+        y = math.log2(p)
+        cdr_xy[cdr].append((m, y))
+
+# 3. 逐序列一元线性回归并判断是否包含阳性子序列
+with open(out_file, "w") as out:
+    out.write("cdr1|cdr2|cdr3\tsample_count\tbeta0_intercept\tbeta1_slope\tR2\tmatch_positive\n")
+    for cdr_key, xy_list in cdr_xy.items():
+        if len(xy_list) < 2:
+            continue
+        xs = np.array([x[0] for x in xy_list]).reshape(-1, 1)
+        ys = np.array([x[1] for x in xy_list])
+        reg = LinearRegression()
+        reg.fit(xs, ys)
+        beta0 = reg.intercept_
+        beta1 = reg.coef_[0]
+        r2 = reg.score(xs, ys)
+
+        # 判断：任意一条阳性序列是cdr_key的子串即标记1
+        match_flag = 0
+        for pos_seq in positive_seqs:
+            if pos_seq in cdr_key:
+                match_flag = 1
+                break
+
+        out.write(f"{cdr_key}\t{len(xy_list)}\t{beta0:.4f}\t{beta1:.4f}\t{r2:.4f}\t{match_flag}\n")
+
+print("回归计算完成，输出：", out_file)
+print("beta1_slope越大，富集越强（负筛低、阳性样本高）")
+print("match_positive=1 代表该CDR三联字符串包含任意一条阳性序列片段")
+EOF
+
+# 运行脚本
+python3 ${out_dir}/calc_enrich_slope.py
 
 
 
