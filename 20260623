@@ -1,13 +1,15 @@
-/home/xiaol/mixcr-4.7.0/mixcr analyze generic-bcr-amplicon \
+/home/xiaol/mixcr-4.7.0/mixcr analyze generic-amplicon \
   --species alpaca \
   --dna \
   --floating-left-alignment-boundary \
   --floating-right-alignment-boundary J \
   --export-productive-clones-only \
-  --assemble-clonotypes-by "VDJRegion" \
-  /home/xiaol/wtc/raw/N22-LHL5466_L1_1.fq.gz \
-  /home/xiaol/wtc/raw/N22-LHL5466_L1_2.fq.gz \
-  /home/xiaol/wtc/260622/N22/output_full
+  --assemble-clonotypes-by "{CDR1Begin:CDR3End}" \
+  /home/xiaol/wtc/raw/N19-LHL5463_L1_1.fq.gz \
+  /home/xiaol/wtc/raw/N19-LHL5463_L1_2.fq.gz \
+  /home/xiaol/wtc/260622/N19/N19_output_full
+
+
 
 awk -F '\t' '
 BEGIN{
@@ -17,10 +19,10 @@ BEGIN{
 NR == 1 { next }
 {
     # A=$1 cloneId, B=$2 readCount
-    # AC=$29 aaSeqCDR1, AE=$31 aaSeqCDR2, AG=$33 aaSeqCDR3
-    cdr1 = $29
-    cdr2 = $31
-    cdr3 = $33
+    # X=$24 aaSeqCDR1, Z=$26 aaSeqCDR2, AB=$28 aaSeqCDR3
+    cdr1 = $24
+    cdr2 = $26
+    cdr3 = $28
     key = cdr1 "|" cdr2 "|" cdr3
 
     sum[key] += $2
@@ -33,7 +35,7 @@ END {
     for(k in sum) {
         print first_id[k], sum[k], k
     }
-}' /home/xiaol/wtc/260608pre/N28/output_full.clones_IGH.tsv > /home/xiaol/wtc/260608pre/N28/cdr_aa_unique_merged.tsv
+}' /home/xiaol/wtc/260622/N22/N22_output_full.clones_IGH.tsv > /home/xiaol/wtc/260622/N22/N22_cdr_aa_unique_merged.tsv
 
 
 out_dir="/home/xiaol/wtc/260622/CG024"
