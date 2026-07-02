@@ -1,0 +1,186 @@
+/home/xiaol/mixcr-4.7.0/mixcr analyze generic-amplicon \
+  --species alpaca \
+  --dna \
+  --floating-left-alignment-boundary \
+  --floating-right-alignment-boundary J \
+  --export-productive-clones-only \
+  --assemble-clonotypes-by "{CDR1Begin:CDR3End}" \
+  /home/xiaol/wtc/raw/N19-LHL5463_L1_1.fq.gz \
+  /home/xiaol/wtc/raw/N19-LHL5463_L1_2.fq.gz \
+  /home/xiaol/wtc/260622/N19/N19_output_full
+
+
+
+awk -F '\t' '
+BEGIN{
+    OFS="\t"
+    print "first_cloneId","total_reads","cdr1|cdr2|cdr3"
+}
+NR == 1 { next }
+{
+    # A=$1 cloneId, B=$2 readCount
+    # X=$24 aaSeqCDR1, Z=$26 aaSeqCDR2, AB=$28 aaSeqCDR3
+    cdr1 = $24
+    cdr2 = $26
+    cdr3 = $28
+    key = cdr1 "|" cdr2 "|" cdr3
+
+    sum[key] += $2
+    # 只保存第一条出现的cloneId，不再拼接全部ID
+    if (!first_id[key]){
+        first_id[key] = $1
+    }
+}
+END {
+    for(k in sum) {
+        print first_id[k], sum[k], k
+    }
+}' /home/xiaol/wtc/260622/N22/N22_output_full.clones_IGH.tsv > /home/xiaol/wtc/260622/N22/N22_cdr_aa_unique_merged.tsv
+
+
+out_dir="/home/xiaol/wtc/260622/a"
+
+# N22 m=-2
+awk -F '\t' 'NR>1{print $3,$2,-2}' /home/xiaol/wtc/260622/N22/N22_cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N22_1
+# N19 m=-1
+awk -F '\t' 'NR>1{print $3,$2,-1}' /home/xiaol/wtc/260622/N19/N19_cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N19_1
+# N17 m=1
+awk -F '\t' 'NR>1{print $3,$2,1}' /home/xiaol/wtc/260622/N17/N17_cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N17_1
+
+cat ${out_dir}/tmp_N22_1 ${out_dir}/tmp_N19_1 ${out_dir}/tmp_N17_1 > ${out_dir}/all_cdr_aa_x_count_N22_N19_N17.txt
+
+cat > ${out_dir}/calc_enrich_slope.py << 'EOF'
+import math
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from collections import defaultdict
+
+in_file = "/home/xiaol/wtc/260622/a/all_cdr_aa_x_count_N22_N19_N17.txt"
+out_file = "/home/xiaol/wtc/260622/a/cdr_slope_result_N22_N19_N17.tsv"
+positive_fasta = "/home/xiaol/wtc/260622/CG025_positive.fst"
+
+# 样本映射 m -> 样本名
+m2name = {
+    -2: "N22",
+    -1: "N19",
+    1: "N17"
+}
+name_list = ["N22", "N19", "N17"]
+
+# 读取所有阳性序列存入列表
+positive_seqs = []
+with open(positive_fasta, "r") as f:
+    seq_buf = ""
+    for line in f:
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith(">"):
+            if seq_buf:
+                positive_seqs.append(seq_buf)
+                seq_buf = ""
+        else:
+            seq_buf += line
+    if seq_buf:
+        positive_seqs.append(seq_buf)
+
+# 1. 存储：每个m的总reads；每条CDR在各m的count
+sample_total = defaultdict(int)
+cdr_sample_cnt = defaultdict(lambda: defaultdict(int))  # cdr_key[m] = raw_count
+sample_data = defaultdict(list)
+
+with open(in_file, "r") as f:
+    for line in f:
+        line = line.strip()
+        if not line:
+            continue
+        cdr_key, raw_cnt, m = line.split()
+        raw_cnt = int(raw_cnt)
+        m = float(m)
+        sample_data[m].append((cdr_key, raw_cnt))
+        sample_total[m] += raw_cnt
+        cdr_sample_cnt[cdr_key][m] = raw_cnt
+
+# 2. 计算每条CDR log2(p)用于回归
+cdr_xy = defaultdict(list)
+for m, item_list in sample_data.items():
+    total_s = sample_total[m]
+    clone_num = len(item_list)
+    for cdr, cnt in item_list:
+        p = (cnt + 1) / (total_s + clone_num)
+        y = math.log2(p)
+        cdr_xy[cdr].append((m, y))
+
+# 3. 回归计算 + 输出各样本count/总reads + 阳性匹配
+with open(out_file, "w") as out:
+    # 表头：CDR三联、样本出现数、回归截距、斜率、R2、N22计数、N22总reads、N19计数、N19总reads、N17计数、N17总reads、是否含阳性序列
+    header = [
+        "cdr1|cdr2|cdr3",
+        "sample_count",
+        "beta0_intercept",
+        "beta1_slope",
+        "R2",
+        "N22_cnt",
+        "N22_total",
+        "N19_cnt",
+        "N19_total",
+        "N17_cnt",
+        "N17_total",
+        "match_positive"
+    ]
+    out.write("\t".join(header) + "\n")
+
+    for cdr_key, xy_list in cdr_xy.items():
+        if len(xy_list) < 2:
+            continue
+        xs = np.array([x[0] for x in xy_list]).reshape(-1, 1)
+        ys = np.array([x[1] for x in xy_list])
+        reg = LinearRegression()
+        reg.fit(xs, ys)
+        beta0 = reg.intercept_
+        beta1 = reg.coef_[0]
+        r2 = reg.score(xs, ys)
+
+        # 填充三个样本的count和该样本全局总reads
+        n22_cnt = cdr_sample_cnt[cdr_key].get(-2, 0)
+        n22_tot = sample_total[-2]
+        n19_cnt = cdr_sample_cnt[cdr_key].get(-1, 0)
+        n19_tot = sample_total[-1]
+        n17_cnt = cdr_sample_cnt[cdr_key].get(1, 0)
+        n17_tot = sample_total[1]
+
+        # 判断是否包含任意阳性子序列
+        match_flag = 0
+        for pos_seq in positive_seqs:
+            if pos_seq in cdr_key:
+                match_flag = 1
+                break
+
+        # 行输出
+        row = [
+            cdr_key,
+            str(len(xy_list)),
+            f"{beta0:.4f}",
+            f"{beta1:.4f}",
+            f"{r2:.4f}",
+            str(n22_cnt),
+            str(n22_tot),
+            str(n19_cnt),
+            str(n19_tot),
+            str(n17_cnt),
+            str(n17_tot),
+            str(match_flag)
+        ]
+        out.write("\t".join(row) + "\n")
+
+print("回归计算完成，输出：", out_file)
+print("beta1_slope越大，富集越强（负筛低、阳性样本高）")
+print("match_positive=1 代表该CDR三联字符串包含任意一条阳性序列片段")
+print("新增列说明：Nxx_cnt=该序列在样本原始reads；Nxx_total=该样本全部序列总reads")
+EOF
+
+# 运行富集斜率计算脚本
+python3 ${out_dir}/calc_enrich_slope.py
+
+# 运行脚本
+python3 ${out_dir}/calc_enrich_slope.py
