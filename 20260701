@@ -4,12 +4,13 @@
   --floating-left-alignment-boundary \
   --floating-right-alignment-boundary J \
   --export-productive-clones-only \
-  --assemble-clonotypes-by "{CDR1Begin:CDR3End}" \
+  --assemble-clonotypes-by "{VDJRegion}" \
   /home/xiaol/wtc/raw/N34-LJH0274_L1_1.fq.gz \
   /home/xiaol/wtc/raw/N34-LJH0274_L1_2.fq.gz \
   /home/xiaol/wtc/260819/N34/N34_output_full
 
-
+--assemble-clonotypes-by "{CDR1Begin:CDR3End}" \
+VDJRegion
 
 awk -F '\t' '
 BEGIN{
