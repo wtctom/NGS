@@ -5,9 +5,9 @@
   --floating-right-alignment-boundary J \
   --export-productive-clones-only \
   --assemble-clonotypes-by "{CDR1Begin:CDR3End}" \
-  /home/xiaol/wtc/raw/N19-LHL5463_L1_1.fq.gz \
-  /home/xiaol/wtc/raw/N19-LHL5463_L1_2.fq.gz \
-  /home/xiaol/wtc/260622/N19/N19_output_full
+  /home/xiaol/wtc/raw/N34-LJH0274_L1_1.fq.gz \
+  /home/xiaol/wtc/raw/N34-LJH0274_L1_2.fq.gz \
+  /home/xiaol/wtc/260819/N34/N34_output_full
 
 
 
