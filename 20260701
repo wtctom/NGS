@@ -56,9 +56,9 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 from collections import defaultdict
 
-in_file = "/home/xiaol/wtc/260622/a/all_cdr_aa_x_count_N22_N19_N17.txt"
-out_file = "/home/xiaol/wtc/260622/a/cdr_slope_result_N22_N19_N17.tsv"
-positive_fasta = "/home/xiaol/wtc/260622/CG025_positive.fst"
+in_file = "/home/xiaol/gy/result/all_cdr_aa_x_count_N37_N34_N35_N36.txt"
+out_file = "/home/xiaol/wtc/result/cdr_slope_result_N22_N19_N35_N36.tsv"
+positive_fasta = "/home/xiaol/wtc/result/CG037_positive.fst"
 
 # 样本映射 m -> 样本名
 m2name = {
@@ -179,6 +179,10 @@ print("beta1_slope越大，富集越强（负筛低、阳性样本高）")
 print("match_positive=1 代表该CDR三联字符串包含任意一条阳性序列片段")
 print("新增列说明：Nxx_cnt=该序列在样本原始reads；Nxx_total=该样本全部序列总reads")
 EOF
+
+
+
+
 
 # 运行富集斜率计算脚本
 python3 ${out_dir}/calc_enrich_slope.py
