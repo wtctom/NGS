@@ -1,13 +1,13 @@
-/home/xiaol/mixcr-4.7.0/mixcr analyze generic-amplicon \
+/home/xiaol/mixcr-4.7.0/mixcr -Xmx40g analyze generic-amplicon \
   --species alpaca \
   --dna \
   --floating-left-alignment-boundary \
   --floating-right-alignment-boundary J \
   --export-productive-clones-only \
-  --assemble-clonotypes-by "{VDJRegion}" \
-  /home/xiaol/wtc/raw/N34-LJH0274_L1_1.fq.gz \
-  /home/xiaol/wtc/raw/N34-LJH0274_L1_2.fq.gz \
-  /home/xiaol/wtc/260819/N34/N34_output_full
+  --assemble-clonotypes-by "{CDR1Begin:CDR3End}" \
+  /home/xiaol/wtc/raw/N49-LJH10861_L1_1.fq.gz \
+  /home/xiaol/wtc/raw/N49-LJH10861_L1_2.fq.gz \
+  /home/xiaol/wtc/260819/N49/N49_output_full
 
 --assemble-clonotypes-by "{CDR1Begin:CDR3End}" \
 VDJRegion
@@ -24,7 +24,7 @@ NR == 1 { next }
     cdr1 = $24
     cdr2 = $26
     cdr3 = $28
-    key = cdr1 "|" cdr2 "|" cdr3
+    key = cdr1 cdr2  cdr3
 
     sum[key] += $2
     # 只保存第一条出现的cloneId，不再拼接全部ID
@@ -50,7 +50,7 @@ awk -F '\t' 'NR>1{print $3,$2,1}' /home/xiaol/gy/NGS-pre-OP/N37/N37_cdr_aa_uniqu
 # N43 m=2
 awk -F '\t' 'NR>1{print $3,$2,2}' /home/xiaol/gy/NGS-pre-OP/N43/N43_cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N43_1
 
-cat ${out_dir}/tmp_N36_1 ${out_dir}/tmp_N35_1 ${out_dir}/tmp_N37_1}${out_dir}/tmp_N43_1 > ${out_dir}/all_cdr_aa_x_count_N36_N35_N37_N43.txt
+cat ${out_dir}/tmp_N36_1 ${out_dir}/tmp_N35_1 ${out_dir}/tmp_N37_1 ${out_dir}/tmp_N43_1 > ${out_dir}/all_cdr_aa_x_count_N36_N35_N37_N43.txt
 
 cat > ${out_dir}/calc_enrich_slope.py << 'EOF'
 import math
