@@ -39,16 +39,18 @@ END {
 }' /home/xiaol/wtc/260622/N22/N22_output_full.clones_IGH.tsv > /home/xiaol/wtc/260622/N22/N22_cdr_aa_unique_merged.tsv
 
 
-out_dir="/home/xiaol/wtc/260622/a"
+out_dir="/home/xiaol/wtc/result/count"
 
-# N22 m=-2
-awk -F '\t' 'NR>1{print $3,$2,-2}' /home/xiaol/wtc/260622/N22/N22_cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N22_1
-# N19 m=-1
-awk -F '\t' 'NR>1{print $3,$2,-1}' /home/xiaol/wtc/260622/N19/N19_cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N19_1
-# N17 m=1
-awk -F '\t' 'NR>1{print $3,$2,1}' /home/xiaol/wtc/260622/N17/N17_cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N17_1
+# N36 m=-1.1
+awk -F '\t' 'NR>1{print $3,$2,-1.1}' /home/xiaol/gy/NGS-pre-OP/N36/N36_cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N36_1
+# N35 m=-1
+awk -F '\t' 'NR>1{print $3,$2,-1}' /home/xiaol/gy/NGS-pre-OP/N35/N35_cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N35_1
+# N37 m=1
+awk -F '\t' 'NR>1{print $3,$2,1}' /home/xiaol/gy/NGS-pre-OP/N37/N37_cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N37_1
+# N43 m=2
+awk -F '\t' 'NR>1{print $3,$2,2}' /home/xiaol/gy/NGS-pre-OP/N43/N43_cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N43_1
 
-cat ${out_dir}/tmp_N22_1 ${out_dir}/tmp_N19_1 ${out_dir}/tmp_N17_1 > ${out_dir}/all_cdr_aa_x_count_N22_N19_N17.txt
+cat ${out_dir}/tmp_N36_1 ${out_dir}/tmp_N35_1 ${out_dir}/tmp_N37_1}${out_dir}/tmp_N43_1 > ${out_dir}/all_cdr_aa_x_count_N36_N35_N37_N43.txt
 
 cat > ${out_dir}/calc_enrich_slope.py << 'EOF'
 import math
