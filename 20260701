@@ -12,6 +12,18 @@
 --assemble-clonotypes-by "{CDR1Begin:CDR3End}" \
 VDJRegion
 
+/home/xiaol/mixcr-4.7.0/mixcr -Xmx40g exportClones \
+  --preset generic-amplicon \
+  --export-productive-clones-only \
+  /home/xiaol/wtc/260819/N47/N47_output_full.clns \
+  /home/xiaol/wtc/260819/N47/N47_output_full.clones_IGH.tsv
+
+/home/xiaol/mixcr-4.7.0/mixcr -Xmx40g assemble \
+  --report /home/xiaol/wtc/260819/N48/N48_output_full.assemble.report.txt \
+  --json-report /home/xiaol/wtc/260819/N48/N48_output_full.assemble.report.json \
+  /home/xiaol/wtc/260819/N48/N48_output_full.alignments.vdjca \
+  /home/xiaol/wtc/260819/N48/N48_output_full.clns
+
 awk -F '\t' '
 BEGIN{
     OFS="\t"
@@ -39,18 +51,21 @@ END {
 }' /home/xiaol/wtc/260622/N22/N22_output_full.clones_IGH.tsv > /home/xiaol/wtc/260622/N22/N22_cdr_aa_unique_merged.tsv
 
 
-out_dir="/home/xiaol/wtc/result/count"
+out_dir="/home/xiaol/wtc/result/count_2"
+# 关键：先创建目录，-p 不存在则新建，存在也不报错
+mkdir -p ${out_dir}
 
-# N36 m=-1.1
-awk -F '\t' 'NR>1{print $3,$2,-1.1}' /home/xiaol/gy/NGS-pre-OP/N36/N36_cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N36_1
-# N35 m=-1
-awk -F '\t' 'NR>1{print $3,$2,-1}' /home/xiaol/gy/NGS-pre-OP/N35/N35_cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N35_1
-# N37 m=1
-awk -F '\t' 'NR>1{print $3,$2,1}' /home/xiaol/gy/NGS-pre-OP/N37/N37_cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N37_1
-# N43 m=2
-awk -F '\t' 'NR>1{print $3,$2,2}' /home/xiaol/gy/NGS-pre-OP/N43/N43_cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N43_1
+# N38 m=-1.1
+awk -F '\t' 'NR>1{print $3,$2,-1.1}' /home/xiaol/gy/NGS-pre-OP/N38/N38_cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N38_1
+# N39 m=-1
+awk -F '\t' 'NR>1{print $3,$2,-1}' /home/xiaol/gy/NGS-pre-OP/N39/N39_cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N39_1
+# N40 m=1
+awk -F '\t' 'NR>1{print $3,$2,1}' /home/xiaol/gy/NGS-pre-OP/N40/N40_cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N40_1
+# N46 m=2
+awk -F '\t' 'NR>1{print $3,$2,2}' /home/xiaol/gy/NGS-pre-OP/N46/N46_cdr_aa_unique_merged.tsv > ${out_dir}/tmp_N46_1
 
-cat ${out_dir}/tmp_N36_1 ${out_dir}/tmp_N35_1 ${out_dir}/tmp_N37_1 ${out_dir}/tmp_N43_1 > ${out_dir}/all_cdr_aa_x_count_N36_N35_N37_N43.txt
+# 合并所有临时文件
+cat ${out_dir}/tmp_N38_1 ${out_dir}/tmp_N39_1 ${out_dir}/tmp_N40_1 ${out_dir}/tmp_N46_1 > ${out_dir}/all_cdr_aa_x_count_N38_N39_N40_N46.txt
 
 cat > ${out_dir}/calc_enrich_slope.py << 'EOF'
 import math
